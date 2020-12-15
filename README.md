@@ -1,3 +1,5 @@
+<img src="./tab.png" width="500px"></img>
+
 ## Tab Transformer (wip)
 
 Implementation of <a href="https://arxiv.org/abs/2012.06678">Tab Transformer</a>, attention network for tabular data, in Pytorch
