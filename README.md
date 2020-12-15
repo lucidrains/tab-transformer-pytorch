@@ -23,7 +23,8 @@ model = TabTransformer(
     dim = 32,                       # dimension, paper set at 32
     dim_out = 1,                    # binary prediction, but could be anything
     depth = 6,                      # depth, paper recommended 6
-    heads = 8                       # heads, paper recommends 8
+    heads = 8,                      # heads, paper recommends 8
+    mlp_hidden_mults = (4, 2)       # multipliers of each successive layer of the final feedforward to logit
 )
 
 x_categ = torch.randint(0, 100, (1, 10))  # categorical values given a unique id across all categories
