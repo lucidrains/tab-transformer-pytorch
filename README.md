@@ -1,4 +1,4 @@
-<img src="./tab.png" width="500px"></img>
+<img src="./tab.png" width="250px"></img>
 
 ## Tab Transformer (wip)
 
