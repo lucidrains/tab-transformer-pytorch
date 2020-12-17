@@ -28,7 +28,7 @@ model = TabTransformer(
     continuous_mean_var = cont_mean_var # (optional) - normalize the continuous values before layer norm
 )
 
-x_categ = torch.randint(0, 5, (1, 5))     # categorical values given a unique id across all categories
+x_categ = torch.randint(0, 5, (1, 5))     # category values, from 0 - max number of categories, in the order as passed into the constructor above
 x_cont = torch.randn(1, 10)               # assume continuous values are already normalized individually
 
 pred = model(x_categ, x_cont)
