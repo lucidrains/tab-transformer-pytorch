@@ -75,22 +75,41 @@ class TabTransformer(nn.Module):
     def __init__(
         self,
         *,
-        num_unique_categories,
-        num_categories,
+        categories,
         num_continuous,
         dim,
         depth,
         heads,
         dim_head = 16,
         dim_out = 1,
-        mlp_hidden_mults = (4, 2)
+        mlp_hidden_mults = (4, 2),
+        continuous_mean_var = None
     ):
         super().__init__()
+        assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
         assert len(mlp_hidden_mults) == 2, 'final mlp fixed at 2 layers for now'
 
-        self.categorical_embeds = nn.Embedding(num_unique_categories, dim)
+        # categories related calculations
+
+        self.num_categories = len(categories)
+        self.num_unique_categories = sum(categories)
+
+        # for automatically offsetting unique category ids to the correct position in the categories embedding table
+
+        categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = 0).cumsum(dim = -1)[:-1]
+        self.register_buffer('categories_offset', categories_offset)
+
+        self.categorical_embeds = nn.Embedding(self.num_unique_categories, dim)
+
+        # continuous
+
+        assert continuous_mean_var.shape == (num_continuous, 2), f'continuous_mean_var must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
+        self.register_buffer('continuous_mean_var', continuous_mean_var)
+
+        # attention layers
 
         self.layers = nn.ModuleList([])
+
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head))),
@@ -99,7 +118,9 @@ class TabTransformer(nn.Module):
 
         self.norm = nn.LayerNorm(num_continuous)
 
-        input_size = (dim * num_categories) + num_continuous
+        # mlp to logits
+
+        input_size = (dim * self.num_categories) + num_continuous
         l = input_size // 8
         mult1, mult2 = mlp_hidden_mults
 
@@ -112,6 +133,9 @@ class TabTransformer(nn.Module):
         )
 
     def forward(self, x_categ, x_cont):
+        assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
+        x_categ += self.categories_offset
+
         x = self.categorical_embeds(x_categ)
 
         for attn, ff in self.layers:
@@ -119,6 +143,11 @@ class TabTransformer(nn.Module):
             x = ff(x)
 
         flat_categ = x.flatten(1)
+
+        if exists(self.continuous_mean_var):
+            mean, var = self.continuous_mean_var.unbind(dim = -1)
+            x_cont = (x_cont - mean) / var
+
         normed_cont = self.norm(x_cont)
 
         x = torch.cat((flat_categ, normed_cont), dim = -1)

@@ -16,18 +16,19 @@ $ pip install tab-transformer-pytorch
 import torch
 from tab_transformer_pytorch import TabTransformer
 
+cont_mean_var = torch.randn(10, 2)
+
 model = TabTransformer(
-    num_unique_categories = 100,    # sum of unique categories across all categories
-    num_categories = 10,            # number of categorical values
-    num_continuous = 10,            # number of continuous values
-    dim = 32,                       # dimension, paper set at 32
-    dim_out = 1,                    # binary prediction, but could be anything
-    depth = 6,                      # depth, paper recommended 6
-    heads = 8,                      # heads, paper recommends 8
-    mlp_hidden_mults = (4, 2)       # multipliers of each successive layer of the final feedforward to logit
+    categories = (10, 5, 6, 5, 8),      # tuple containing the number of unique values within each category
+    num_continuous = 10,                # number of continuous values
+    dim = 32,                           # dimension, paper set at 32
+    dim_out = 1,                        # binary prediction, but could be anything
+    depth = 6,                          # depth, paper recommended 6
+    heads = 8,                          # heads, paper recommends 8
+    continuous_mean_var = cont_mean_var # (optional) - normalize the continuous values before layer norm
 )
 
-x_categ = torch.randint(0, 100, (1, 10))  # categorical values given a unique id across all categories
+x_categ = torch.randint(0, 5, (1, 5))     # categorical values given a unique id across all categories
 x_cont = torch.randn(1, 10)               # assume continuous values are already normalized individually
 
 pred = model(x_categ, x_cont)
