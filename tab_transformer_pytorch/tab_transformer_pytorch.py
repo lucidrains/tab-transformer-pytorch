@@ -83,7 +83,7 @@ class TabTransformer(nn.Module):
         dim_head = 16,
         dim_out = 1,
         mlp_hidden_mults = (4, 2),
-        continuous_mean_var = None
+        continuous_mean_std = None
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
@@ -103,8 +103,8 @@ class TabTransformer(nn.Module):
 
         # continuous
 
-        assert continuous_mean_var.shape == (num_continuous, 2), f'continuous_mean_var must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
-        self.register_buffer('continuous_mean_var', continuous_mean_var)
+        assert continuous_mean_std.shape == (num_continuous, 2), f'continuous_mean_std must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
+        self.register_buffer('continuous_mean_std', continuous_mean_std)
 
         self.norm = nn.LayerNorm(num_continuous)
         self.num_continuous = num_continuous
@@ -147,9 +147,9 @@ class TabTransformer(nn.Module):
 
         assert x_cont.shape[1] == self.num_continuous, f'you must pass in {self.num_continuous} values for your continuous input'
 
-        if exists(self.continuous_mean_var):
-            mean, var = self.continuous_mean_var.unbind(dim = -1)
-            x_cont = (x_cont - mean) / var
+        if exists(self.continuous_mean_std):
+            mean, std = self.continuous_mean_std.unbind(dim = -1)
+            x_cont = (x_cont - mean) / std
 
         normed_cont = self.norm(x_cont)
 

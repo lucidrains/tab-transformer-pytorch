@@ -25,7 +25,7 @@ model = TabTransformer(
     dim_out = 1,                        # binary prediction, but could be anything
     depth = 6,                          # depth, paper recommended 6
     heads = 8,                          # heads, paper recommends 8
-    continuous_mean_var = cont_mean_var # (optional) - normalize the continuous values before layer norm
+    continuous_mean_std = cont_mean_std # (optional) - normalize the continuous values before layer norm
 )
 
 x_categ = torch.randint(0, 5, (1, 5))     # category values, from 0 - max number of categories, in the order as passed into the constructor above
