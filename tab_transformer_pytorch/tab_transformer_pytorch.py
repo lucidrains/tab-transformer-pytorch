@@ -106,6 +106,9 @@ class TabTransformer(nn.Module):
         assert continuous_mean_var.shape == (num_continuous, 2), f'continuous_mean_var must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
         self.register_buffer('continuous_mean_var', continuous_mean_var)
 
+        self.norm = nn.LayerNorm(num_continuous)
+        self.num_continuous = num_continuous
+
         # attention layers
 
         self.layers = nn.ModuleList([])
@@ -115,8 +118,6 @@ class TabTransformer(nn.Module):
                 Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head))),
                 Residual(PreNorm(dim, FeedForward(dim))),
             ]))
-
-        self.norm = nn.LayerNorm(num_continuous)
 
         # mlp to logits
 
@@ -143,6 +144,8 @@ class TabTransformer(nn.Module):
             x = ff(x)
 
         flat_categ = x.flatten(1)
+
+        assert x_cont.shape[1] == self.num_continuous, f'you must pass in {self.num_continuous} values for your continuous input'
 
         if exists(self.continuous_mean_var):
             mean, var = self.continuous_mean_var.unbind(dim = -1)
