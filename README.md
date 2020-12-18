@@ -25,6 +25,7 @@ model = TabTransformer(
     dim_out = 1,                        # binary prediction, but could be anything
     depth = 6,                          # depth, paper recommended 6
     heads = 8,                          # heads, paper recommends 8
+    mlp_hidden_mults = (4, 2),          # relative multiples of each hidden dimension of the last mlp to logits
     continuous_mean_std = cont_mean_std # (optional) - normalize the continuous values before layer norm
 )
 

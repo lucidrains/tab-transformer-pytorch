@@ -69,6 +69,28 @@ class Attention(nn.Module):
         out = rearrange(out, 'b h n d -> b n (h d)', h = h)
         return self.to_out(out)
 
+# mlp
+
+class MLP(nn.Module):
+    def __init__(self, dims):
+        super().__init__()
+        dims_pairs = list(zip(dims[:-1], dims[1:]))
+        layers = []
+        for ind, (dim_in, dim_out) in enumerate(dims_pairs):
+            is_last = ind >= (len(dims) - 1)
+            linear = nn.Linear(dim_in, dim_out)
+            layers.append(linear)
+
+            if is_last:
+                continue
+
+            layers.append(nn.ReLU())
+
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.mlp(x)
+
 # main class
 
 class TabTransformer(nn.Module):
@@ -87,7 +109,6 @@ class TabTransformer(nn.Module):
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
-        assert len(mlp_hidden_mults) == 2, 'final mlp fixed at 2 layers for now'
 
         # categories related calculations
 
@@ -123,15 +144,10 @@ class TabTransformer(nn.Module):
 
         input_size = (dim * self.num_categories) + num_continuous
         l = input_size // 8
-        mult1, mult2 = mlp_hidden_mults
 
-        self.mlp = nn.Sequential(
-            nn.Linear(input_size, l * mult1),
-            nn.ReLU(),
-            nn.Linear(l * mult1, l * mult2),
-            nn.ReLU(),
-            nn.Linear(l * mult2, dim_out)
-        )
+        hidden_dimensions = list(map(lambda t: l * t, mlp_hidden_mults))
+        all_dimensions = [input_size, *hidden_dimensions, dim_out]
+        self.mlp = MLP(all_dimensions)
 
     def forward(self, x_categ, x_cont):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
