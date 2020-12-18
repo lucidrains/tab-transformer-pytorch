@@ -128,9 +128,9 @@ class TabTransformer(nn.Module):
         self.categorical_embeds = nn.Embedding(self.num_unique_categories, dim)
 
         # continuous
-
-        assert continuous_mean_std.shape == (num_continuous, 2), f'continuous_mean_std must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
-        self.register_buffer('continuous_mean_std', continuous_mean_std)
+        if exists(self.continuous_mean_std):
+            assert continuous_mean_std.shape == (num_continuous, 2), f'continuous_mean_std must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
+            self.register_buffer('continuous_mean_std', continuous_mean_std)
 
         self.norm = nn.LayerNorm(num_continuous)
         self.num_continuous = num_continuous
