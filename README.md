@@ -26,6 +26,7 @@ model = TabTransformer(
     depth = 6,                          # depth, paper recommended 6
     heads = 8,                          # heads, paper recommends 8
     mlp_hidden_mults = (4, 2),          # relative multiples of each hidden dimension of the last mlp to logits
+    mlp_act = nn.ReLU(),                # activation for final mlp, defaults to relu, but could be anything else (selu etc)
     continuous_mean_std = cont_mean_std # (optional) - normalize the continuous values before layer norm
 )
 

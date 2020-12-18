@@ -9,6 +9,9 @@ from einops import rearrange
 def exists(val):
     return val is not None
 
+def default(val, d):
+    return val if exists(val) else d
+
 # classes
 
 class Residual(nn.Module):
@@ -72,7 +75,7 @@ class Attention(nn.Module):
 # mlp
 
 class MLP(nn.Module):
-    def __init__(self, dims):
+    def __init__(self, dims, act = None):
         super().__init__()
         dims_pairs = list(zip(dims[:-1], dims[1:]))
         layers = []
@@ -84,7 +87,8 @@ class MLP(nn.Module):
             if is_last:
                 continue
 
-            layers.append(nn.ReLU())
+            act = default(act, nn.ReLU())
+            layers.append(act)
 
         self.mlp = nn.Sequential(*layers)
 
@@ -105,6 +109,7 @@ class TabTransformer(nn.Module):
         dim_head = 16,
         dim_out = 1,
         mlp_hidden_mults = (4, 2),
+        mlp_act = None,
         continuous_mean_std = None
     ):
         super().__init__()
@@ -147,7 +152,8 @@ class TabTransformer(nn.Module):
 
         hidden_dimensions = list(map(lambda t: l * t, mlp_hidden_mults))
         all_dimensions = [input_size, *hidden_dimensions, dim_out]
-        self.mlp = MLP(all_dimensions)
+
+        self.mlp = MLP(all_dimensions, act = mlp_act)
 
     def forward(self, x_categ, x_cont):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
