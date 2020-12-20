@@ -39,11 +39,12 @@ class GEGLU(nn.Module):
         return x * F.gelu(gates)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, mult = 4):
+    def __init__(self, dim, mult = 4, dropout = 0.):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult * 2),
             GEGLU(),
+            nn.Dropout(dropout),
             nn.Linear(dim * mult, dim)
         )
 
@@ -55,7 +56,8 @@ class Attention(nn.Module):
         self,
         dim,
         heads = 8,
-        dim_head = 16
+        dim_head = 16,
+        dropout = 0.
     ):
         super().__init__()
         inner_dim = dim_head * heads
@@ -65,6 +67,8 @@ class Attention(nn.Module):
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
         self.to_out = nn.Linear(inner_dim, dim)
 
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
         h = self.heads
         q, k, v = self.to_qkv(x).chunk(3, dim = -1)
@@ -72,6 +76,7 @@ class Attention(nn.Module):
         sim = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
 
         attn = sim.softmax(dim = -1)
+        attn = self.dropout(attn)
 
         out = einsum('b h i j, b h j d -> b h i d', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)', h = h)
@@ -80,15 +85,15 @@ class Attention(nn.Module):
 # transformer
 
 class Transformer(nn.Module):
-    def __init__(self, num_tokens, dim, depth, heads, dim_head):
+    def __init__(self, num_tokens, dim, depth, heads, dim_head, attn_dropout, ff_dropout):
         super().__init__()
         self.embeds = nn.Embedding(num_tokens, dim)
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head))),
-                Residual(PreNorm(dim, FeedForward(dim))),
+                Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = attn_dropout))),
+                Residual(PreNorm(dim, FeedForward(dim, dropout = ff_dropout))),
             ]))
 
     def forward(self, x):
@@ -138,7 +143,9 @@ class TabTransformer(nn.Module):
         mlp_hidden_mults = (4, 2),
         mlp_act = None,
         num_special_tokens = 2,
-        continuous_mean_std = None
+        continuous_mean_std = None,
+        attn_dropout = 0.,
+        ff_dropout = 0.
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
@@ -175,7 +182,9 @@ class TabTransformer(nn.Module):
             dim = dim,
             depth = depth,
             heads = heads,
-            dim_head = dim_head
+            dim_head = dim_head,
+            attn_dropout = attn_dropout,
+            ff_dropout = ff_dropout
         )
 
         # mlp to logits
