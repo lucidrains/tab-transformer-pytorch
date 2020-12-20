@@ -35,6 +35,11 @@ x_cont = torch.randn(1, 10)               # assume continuous values are already
 
 pred = model(x_categ, x_cont)
 ```
+
+## Unsupervised Training
+
+To undergo the type of unsupervised training described in the paper, you can first convert your categories tokens to the appropriate unique ids, and then use <a href="https://github.com/lucidrains/electra-pytorch">Electra</a> on `model.transformer`.
+
 ## Citations
 
 ```bibtex
