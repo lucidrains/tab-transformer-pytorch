@@ -77,6 +77,28 @@ class Attention(nn.Module):
         out = rearrange(out, 'b h n d -> b n (h d)', h = h)
         return self.to_out(out)
 
+# transformer
+
+class Transformer(nn.Module):
+    def __init__(self, num_tokens, dim, depth, heads, dim_head):
+        super().__init__()
+        self.embeds = nn.Embedding(num_tokens, dim)
+        self.layers = nn.ModuleList([])
+
+        for _ in range(depth):
+            self.layers.append(nn.ModuleList([
+                Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head))),
+                Residual(PreNorm(dim, FeedForward(dim))),
+            ]))
+
+    def forward(self, x):
+        x = self.embeds(x)
+
+        for attn, ff in self.layers:
+            x = attn(x)
+            x = ff(x)
+
+        return x
 # mlp
 
 class MLP(nn.Module):
@@ -131,8 +153,6 @@ class TabTransformer(nn.Module):
         self.num_special_tokens = num_special_tokens
         total_tokens = self.num_unique_categories + num_special_tokens
 
-        self.categorical_embeds = nn.Embedding(total_tokens, dim)
-
         # for automatically offsetting unique category ids to the correct position in the categories embedding table
 
         categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
@@ -148,15 +168,15 @@ class TabTransformer(nn.Module):
         self.norm = nn.LayerNorm(num_continuous)
         self.num_continuous = num_continuous
 
-        # attention layers
+        # transformer
 
-        self.layers = nn.ModuleList([])
-
-        for _ in range(depth):
-            self.layers.append(nn.ModuleList([
-                Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head))),
-                Residual(PreNorm(dim, FeedForward(dim))),
-            ]))
+        self.transformer = Transformer(
+            num_tokens = total_tokens,
+            dim = dim,
+            depth = depth,
+            heads = heads,
+            dim_head = dim_head
+        )
 
         # mlp to logits
 
@@ -172,11 +192,7 @@ class TabTransformer(nn.Module):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
         x_categ += self.categories_offset
 
-        x = self.categorical_embeds(x_categ)
-
-        for attn, ff in self.layers:
-            x = attn(x)
-            x = ff(x)
+        x = self.transformer(x_categ)
 
         flat_categ = x.flatten(1)
 
