@@ -14,6 +14,7 @@ $ pip install tab-transformer-pytorch
 
 ```python
 import torch
+import torch.nn as nn
 from tab_transformer_pytorch import TabTransformer
 
 cont_mean_std = torch.randn(10, 2)
