@@ -112,7 +112,7 @@ class MLP(nn.Module):
         dims_pairs = list(zip(dims[:-1], dims[1:]))
         layers = []
         for ind, (dim_in, dim_out) in enumerate(dims_pairs):
-            is_last = ind >= (len(dims) - 1)
+            is_last = ind >= (len(dims_pairs) - 1)
             linear = nn.Linear(dim_in, dim_out)
             layers.append(linear)
 
