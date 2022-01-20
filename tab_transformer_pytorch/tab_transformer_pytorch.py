@@ -119,8 +119,8 @@ class MLP(nn.Module):
             if is_last:
                 continue
 
-            act = default(act, nn.ReLU())
-            layers.append(act)
+        act = default(act, nn.ReLU())
+        layers.append(act)
 
         self.mlp = nn.Sequential(*layers)
 
