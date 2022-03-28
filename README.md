@@ -43,6 +43,10 @@ pred = model(x_categ, x_cont)
 
 To undergo the type of unsupervised training described in the paper, you can first convert your categories tokens to the appropriate unique ids, and then use <a href="https://github.com/lucidrains/electra-pytorch">Electra</a> on `model.transformer`.
 
+## Todo
+
+- [ ] consider https://arxiv.org/abs/2203.05556
+
 ## Citations
 
 ```bibtex
