@@ -85,9 +85,16 @@ class Attention(nn.Module):
 # transformer
 
 class Transformer(nn.Module):
-    def __init__(self, num_tokens, dim, depth, heads, dim_head, attn_dropout, ff_dropout):
+    def __init__(self, num_tokens, dim, depth, heads, dim_head, attn_dropout, ff_dropout, use_shared_embeddings, num_categories, shared_embedding_divisor):
         super().__init__()
         self.embeds = nn.Embedding(num_tokens, dim)
+        self.use_shared_embeddings = use_shared_embeddings
+
+        if self.use_shared_embeddings:
+            self.shared_embeds = nn.Parameter(
+                torch.empty(num_categories, dim // shared_embedding_divisor).uniform_(-1, 1)
+            )
+
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
@@ -98,6 +105,9 @@ class Transformer(nn.Module):
 
     def forward(self, x):
         x = self.embeds(x)
+
+        if self.use_shared_embeddings:
+            x[:, :, :self.shared_embeds.shape[1]] = self.shared_embeds
 
         for attn, ff in self.layers:
             x = attn(x)
@@ -145,7 +155,9 @@ class TabTransformer(nn.Module):
         num_special_tokens = 2,
         continuous_mean_std = None,
         attn_dropout = 0.,
-        ff_dropout = 0.
+        ff_dropout = 0.,
+        use_shared_embeddings = False,
+        shared_embedding_divisor = 8
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
@@ -184,7 +196,10 @@ class TabTransformer(nn.Module):
             heads = heads,
             dim_head = dim_head,
             attn_dropout = attn_dropout,
-            ff_dropout = ff_dropout
+            ff_dropout = ff_dropout,
+            use_shared_embedding = use_shared_embedding,
+            num_categories = self.num_categories,
+            shared_embedding_divisor = shared_embedding_divisor
         )
 
         # mlp to logits
@@ -199,7 +214,7 @@ class TabTransformer(nn.Module):
 
     def forward(self, x_categ, x_cont):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
-        x_categ += self.categories_offset
+        x_categ = x_categ + self.categories_offset
 
         x = self.transformer(x_categ)
 
