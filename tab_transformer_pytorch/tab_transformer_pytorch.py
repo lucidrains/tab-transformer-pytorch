@@ -149,6 +149,7 @@ class TabTransformer(nn.Module):
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
+        assert len(categories) + num_continuous > 0, 'input shape must not be null'
 
         # categories related calculations
 
@@ -162,18 +163,21 @@ class TabTransformer(nn.Module):
 
         # for automatically offsetting unique category ids to the correct position in the categories embedding table
 
-        categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
-        categories_offset = categories_offset.cumsum(dim = -1)[:-1]
-        self.register_buffer('categories_offset', categories_offset)
+        if self.num_unique_categories > 0:
+            categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
+            categories_offset = categories_offset.cumsum(dim = -1)[:-1]
+            self.register_buffer('categories_offset', categories_offset)
 
         # continuous
-
-        if exists(continuous_mean_std):
-            assert continuous_mean_std.shape == (num_continuous, 2), f'continuous_mean_std must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
-        self.register_buffer('continuous_mean_std', continuous_mean_std)
-
-        self.norm = nn.LayerNorm(num_continuous)
         self.num_continuous = num_continuous
+
+        if self.num_continuous > 0:
+            if exists(continuous_mean_std):
+                assert continuous_mean_std.shape == (num_continuous, 2), f'continuous_mean_std must have a shape of ({num_continuous}, 2) where the last dimension contains the mean and variance respectively'
+            self.register_buffer('continuous_mean_std', continuous_mean_std)
+
+            self.norm = nn.LayerNorm(num_continuous)
+
 
         # transformer
 
@@ -198,20 +202,27 @@ class TabTransformer(nn.Module):
         self.mlp = MLP(all_dimensions, act = mlp_act)
 
     def forward(self, x_categ, x_cont):
+        xs = []
+
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
-        x_categ += self.categories_offset
 
-        x = self.transformer(x_categ)
+        if self.num_unique_categories > 0:
+            x_categ += self.categories_offset
 
-        flat_categ = x.flatten(1)
+            x = self.transformer(x_categ)
+
+            flat_categ = x.flatten(1)
+            xs.append(flat_categ)
 
         assert x_cont.shape[1] == self.num_continuous, f'you must pass in {self.num_continuous} values for your continuous input'
 
-        if exists(self.continuous_mean_std):
-            mean, std = self.continuous_mean_std.unbind(dim = -1)
-            x_cont = (x_cont - mean) / std
+        if self.num_continuous > 0:
+            if exists(self.continuous_mean_std):
+                mean, std = self.continuous_mean_std.unbind(dim = -1)
+                x_cont = (x_cont - mean) / std
 
-        normed_cont = self.norm(x_cont)
+            normed_cont = self.norm(x_cont)
+            xs.append(normed_cont)
 
-        x = torch.cat((flat_categ, normed_cont), dim = -1)
+        x = torch.cat(xs, dim = -1)
         return self.mlp(x)

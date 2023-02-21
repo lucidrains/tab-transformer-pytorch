@@ -117,6 +117,7 @@ class FTTransformer(nn.Module):
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
+        assert len(categories) + num_continuous > 0, 'input shape must not be null'
 
         # categories related calculations
 
@@ -130,17 +131,21 @@ class FTTransformer(nn.Module):
 
         # for automatically offsetting unique category ids to the correct position in the categories embedding table
 
-        categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
-        categories_offset = categories_offset.cumsum(dim = -1)[:-1]
-        self.register_buffer('categories_offset', categories_offset)
+        if self.num_unique_categories > 0:
+            categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
+            categories_offset = categories_offset.cumsum(dim = -1)[:-1]
+            self.register_buffer('categories_offset', categories_offset)
 
-        # categorical embedding
+            # categorical embedding
 
-        self.categorical_embeds = nn.Embedding(total_tokens, dim)
+            self.categorical_embeds = nn.Embedding(total_tokens, dim)
 
         # continuous
 
-        self.numerical_embedder = NumericalEmbedder(dim, num_continuous)
+        self.num_continuous = num_continuous
+
+        if self.num_continuous > 0:
+            self.numerical_embedder = NumericalEmbedder(dim, self.num_continuous)
 
         # cls token
 
@@ -148,7 +153,7 @@ class FTTransformer(nn.Module):
 
         # transformer
 
-        self.transformer = Transformer(            
+        self.transformer = Transformer(
             dim = dim,
             depth = depth,
             heads = heads,
@@ -166,23 +171,28 @@ class FTTransformer(nn.Module):
         )
 
     def forward(self, x_categ, x_numer):
-        b = x_categ.shape[0]
-
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
-        x_categ += self.categories_offset
 
-        x_categ = self.categorical_embeds(x_categ)
+        xs = []
+        if self.num_unique_categories > 0:
+            x_categ += self.categories_offset
+
+            x_categ = self.categorical_embeds(x_categ)
+
+            xs.append(x_categ)
 
         # add numerically embedded tokens
+        if self.num_continuous > 0:
+            x_numer = self.numerical_embedder(x_numer)
 
-        x_numer = self.numerical_embedder(x_numer)
+            xs.append(x_numer)
 
         # concat categorical and numerical
 
-        x = torch.cat((x_categ, x_numer), dim = 1)
+        x = torch.cat(xs, dim = 1)
 
         # append cls tokens
-
+        b = x.shape[0]
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b = b)
         x = torch.cat((cls_tokens, x), dim = 1)
 
