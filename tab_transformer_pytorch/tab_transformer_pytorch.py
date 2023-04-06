@@ -76,11 +76,11 @@ class Attention(nn.Module):
         sim = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
 
         attn = sim.softmax(dim = -1)
-        attn = self.dropout(attn)
+        dropped_attn = self.dropout(attn)
 
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = einsum('b h i j, b h j d -> b h i d', dropped_attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)', h = h)
-        return self.to_out(out)
+        return self.to_out(out), attn
 
 # transformer
 
@@ -92,18 +92,26 @@ class Transformer(nn.Module):
 
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                Residual(PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = attn_dropout))),
-                Residual(PreNorm(dim, FeedForward(dim, dropout = ff_dropout))),
+                PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = attn_dropout)),
+                PreNorm(dim, FeedForward(dim, dropout = ff_dropout)),
             ]))
 
-    def forward(self, x):
+    def forward(self, x, return_attn = False):
         x = self.embeds(x)
 
-        for attn, ff in self.layers:
-            x = attn(x)
-            x = ff(x)
+        post_softmax_attns = []
 
-        return x
+        for attn, ff in self.layers:
+            attn_out, post_softmax_attn = attn(x)
+            post_softmax_attns.append(post_softmax_attn)
+
+            x = x + attn_out
+            x = ff(x) + x
+
+        if not return_attn:
+            return x
+
+        return x, torch.stack(post_softmax_attns)
 # mlp
 
 class MLP(nn.Module):
@@ -201,7 +209,7 @@ class TabTransformer(nn.Module):
 
         self.mlp = MLP(all_dimensions, act = mlp_act)
 
-    def forward(self, x_categ, x_cont):
+    def forward(self, x_categ, x_cont, return_attn = False):
         xs = []
 
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
@@ -209,7 +217,7 @@ class TabTransformer(nn.Module):
         if self.num_unique_categories > 0:
             x_categ += self.categories_offset
 
-            x = self.transformer(x_categ)
+            x, attns = self.transformer(x_categ, return_attn = True)
 
             flat_categ = x.flatten(1)
             xs.append(flat_categ)
@@ -225,4 +233,9 @@ class TabTransformer(nn.Module):
             xs.append(normed_cont)
 
         x = torch.cat(xs, dim = -1)
-        return self.mlp(x)
+        logits =self.mlp(x)
+
+        if not return_attn:
+            return logits
+
+        return logits, attns
