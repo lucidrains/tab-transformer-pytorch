@@ -52,11 +52,13 @@ class Attention(nn.Module):
         sim = einsum('b h i d, b h j d -> b h i j', q, k)
 
         attn = sim.softmax(dim = -1)
-        attn = self.dropout(attn)
+        dropped_attn = self.dropout(attn)
 
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = einsum('b h i j, b h j d -> b h i d', dropped_attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)', h = h)
-        return self.to_out(out)
+        out = self.to_out(out)
+
+        return out, attn
 
 # transformer
 
@@ -79,12 +81,20 @@ class Transformer(nn.Module):
                 FeedForward(dim, dropout = ff_dropout),
             ]))
 
-    def forward(self, x):
+    def forward(self, x, return_attn = False):
+        post_softmax_attns = []
+
         for attn, ff in self.layers:
-            x = attn(x) + x
+            attn_out, post_softmax_attn = attn(x)
+            post_softmax_attns.append(post_softmax_attn)
+
+            x = attn_out + x
             x = ff(x) + x
 
-        return x
+        if not return_attn:
+            return x
+
+        return x, torch.stack(post_softmax_attns)
 
 # numerical embedder
 
@@ -170,7 +180,7 @@ class FTTransformer(nn.Module):
             nn.Linear(dim, dim_out)
         )
 
-    def forward(self, x_categ, x_numer):
+    def forward(self, x_categ, x_numer, return_attn = False):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
 
         xs = []
@@ -198,7 +208,7 @@ class FTTransformer(nn.Module):
 
         # attend
 
-        x = self.transformer(x)
+        x, attns = self.transformer(x, return_attn = True)
 
         # get cls token
 
@@ -206,4 +216,9 @@ class FTTransformer(nn.Module):
 
         # out in the paper is linear(relu(ln(cls)))
 
-        return self.to_logits(x)
+        logits = self.to_logits(x)
+
+        if not return_attn:
+            return logits
+
+        return logits, attns
