@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'tab-transformer-pytorch',
   packages = find_packages(),
-  version = '0.2.5',
+  version = '0.2.6',
   license='MIT',
   description = 'Tab Transformer - Pytorch',
   author = 'Phil Wang',
