@@ -6,6 +6,7 @@ setup(
   version = '0.3.0',
   license='MIT',
   description = 'Tab Transformer - Pytorch',
+  long_description_content_type = 'text/markdown',
   author = 'Phil Wang',
   author_email = 'lucidrains@gmail.com',
   url = 'https://github.com/lucidrains/tab-transformer-pytorch',
