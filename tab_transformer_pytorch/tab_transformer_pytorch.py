@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
-from einops import rearrange
+from einops import rearrange, repeat
 
 # helpers
 
@@ -85,9 +85,16 @@ class Attention(nn.Module):
 # transformer
 
 class Transformer(nn.Module):
-    def __init__(self, num_tokens, dim, depth, heads, dim_head, attn_dropout, ff_dropout):
+    def __init__(
+        self,
+        dim,
+        depth,
+        heads,
+        dim_head,
+        attn_dropout,
+        ff_dropout
+    ):
         super().__init__()
-        self.embeds = nn.Embedding(num_tokens, dim)
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
@@ -97,8 +104,6 @@ class Transformer(nn.Module):
             ]))
 
     def forward(self, x, return_attn = False):
-        x = self.embeds(x)
-
         post_softmax_attns = []
 
         for attn, ff in self.layers:
@@ -153,7 +158,9 @@ class TabTransformer(nn.Module):
         num_special_tokens = 2,
         continuous_mean_std = None,
         attn_dropout = 0.,
-        ff_dropout = 0.
+        ff_dropout = 0.,
+        use_shared_categ_embed = True,
+        shared_categ_dim_divisor = 8.   # in paper, they reserve dimension / 8 for category shared embedding
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
@@ -169,6 +176,18 @@ class TabTransformer(nn.Module):
         self.num_special_tokens = num_special_tokens
         total_tokens = self.num_unique_categories + num_special_tokens
 
+        shared_embed_dim = 0 if not use_shared_categ_embed else int(dim // shared_categ_dim_divisor)
+
+        self.category_embed = nn.Embedding(total_tokens, dim - shared_embed_dim)
+
+        # take care of shared category embed
+
+        self.use_shared_categ_embed = use_shared_categ_embed
+
+        if use_shared_categ_embed:
+            self.shared_category_embed = nn.Parameter(torch.zeros(self.num_categories, shared_embed_dim))
+            nn.init.normal_(self.shared_category_embed, std = 0.02)
+
         # for automatically offsetting unique category ids to the correct position in the categories embedding table
 
         if self.num_unique_categories > 0:
@@ -177,6 +196,7 @@ class TabTransformer(nn.Module):
             self.register_buffer('categories_offset', categories_offset)
 
         # continuous
+
         self.num_continuous = num_continuous
 
         if self.num_continuous > 0:
@@ -186,11 +206,9 @@ class TabTransformer(nn.Module):
 
             self.norm = nn.LayerNorm(num_continuous)
 
-
         # transformer
 
         self.transformer = Transformer(
-            num_tokens = total_tokens,
             dim = dim,
             depth = depth,
             heads = heads,
@@ -202,9 +220,8 @@ class TabTransformer(nn.Module):
         # mlp to logits
 
         input_size = (dim * self.num_categories) + num_continuous
-        l = input_size // 8
 
-        hidden_dimensions = list(map(lambda t: l * t, mlp_hidden_mults))
+        hidden_dimensions = [input_size * t for t in  mlp_hidden_mults]
         all_dimensions = [input_size, *hidden_dimensions, dim_out]
 
         self.mlp = MLP(all_dimensions, act = mlp_act)
@@ -215,11 +232,17 @@ class TabTransformer(nn.Module):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
 
         if self.num_unique_categories > 0:
-            x_categ += self.categories_offset
+            x_categ = x_categ + self.categories_offset
 
-            x, attns = self.transformer(x_categ, return_attn = True)
+            categ_embed = self.category_embed(x_categ)
 
-            flat_categ = x.flatten(1)
+            if self.use_shared_categ_embed:
+                shared_categ_embed = repeat(self.shared_category_embed, 'n d -> b n d', b = categ_embed.shape[0])
+                categ_embed = torch.cat((categ_embed, shared_categ_embed), dim = -1)
+
+            x, attns = self.transformer(categ_embed, return_attn = True)
+
+            flat_categ = rearrange(x, 'b ... -> b (...)')
             xs.append(flat_categ)
 
         assert x_cont.shape[1] == self.num_continuous, f'you must pass in {self.num_continuous} values for your continuous input'
@@ -233,7 +256,7 @@ class TabTransformer(nn.Module):
             xs.append(normed_cont)
 
         x = torch.cat(xs, dim = -1)
-        logits =self.mlp(x)
+        logits = self.mlp(x)
 
         if not return_attn:
             return logits
