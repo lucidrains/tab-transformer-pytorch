@@ -202,9 +202,9 @@ class TabTransformer(nn.Module):
         # mlp to logits
 
         input_size = (dim * self.num_categories) + num_continuous
-        l = input_size // 8
+        l = dim // 8 # to be used for shared embedding
 
-        hidden_dimensions = list(map(lambda t: l * t, mlp_hidden_mults))
+        hidden_dimensions = list(map(lambda t: input_size * t, mlp_hidden_mults))
         all_dimensions = [input_size, *hidden_dimensions, dim_out]
 
         self.mlp = MLP(all_dimensions, act = mlp_act)
