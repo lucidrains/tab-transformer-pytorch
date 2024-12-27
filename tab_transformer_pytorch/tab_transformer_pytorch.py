@@ -1,8 +1,11 @@
 import torch
-import torch.nn.functional as F
 from torch import nn, einsum
+from torch.nn import Module, ModuleList
+import torch.nn.functional as F
 
 from einops import rearrange, repeat
+
+from hyper_connections import HyperConnections
 
 # helpers
 
@@ -14,7 +17,7 @@ def default(val, d):
 
 # classes
 
-class Residual(nn.Module):
+class Residual(Module):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
@@ -22,7 +25,7 @@ class Residual(nn.Module):
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
 
-class PreNorm(nn.Module):
+class PreNorm(Module):
     def __init__(self, dim, fn):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
@@ -33,12 +36,12 @@ class PreNorm(nn.Module):
 
 # attention
 
-class GEGLU(nn.Module):
+class GEGLU(Module):
     def forward(self, x):
         x, gates = x.chunk(2, dim = -1)
         return x * F.gelu(gates)
 
-class FeedForward(nn.Module):
+class FeedForward(Module):
     def __init__(self, dim, mult = 4, dropout = 0.):
         super().__init__()
         self.net = nn.Sequential(
@@ -51,7 +54,7 @@ class FeedForward(nn.Module):
     def forward(self, x, **kwargs):
         return self.net(x)
 
-class Attention(nn.Module):
+class Attention(Module):
     def __init__(
         self,
         dim,
@@ -84,7 +87,7 @@ class Attention(nn.Module):
 
 # transformer
 
-class Transformer(nn.Module):
+class Transformer(Module):
     def __init__(
         self,
         dim,
@@ -92,19 +95,24 @@ class Transformer(nn.Module):
         heads,
         dim_head,
         attn_dropout,
-        ff_dropout
+        ff_dropout,
+        num_residual_streams = 4
     ):
         super().__init__()
-        self.layers = nn.ModuleList([])
+        self.layers = ModuleList([])
+
+        init_hyper_conn, self.expand_streams, self.reduce_streams = HyperConnections.get_init_and_expand_reduce_stream_functions(num_residual_streams, disable = num_residual_streams == 1)
 
         for _ in range(depth):
-            self.layers.append(nn.ModuleList([
-                PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = attn_dropout)),
-                PreNorm(dim, FeedForward(dim, dropout = ff_dropout)),
+            self.layers.append(ModuleList([
+                init_hyper_conn(dim = dim, branch = PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = attn_dropout))),
+                init_hyper_conn(dim = dim, branch = PreNorm(dim, FeedForward(dim, dropout = ff_dropout))),
             ]))
 
     def forward(self, x, return_attn = False):
         post_softmax_attns = []
+
+        x = self.expand_streams(x)
 
         for attn, ff in self.layers:
             attn_out, post_softmax_attn = attn(x)
@@ -113,13 +121,15 @@ class Transformer(nn.Module):
             x = x + attn_out
             x = ff(x) + x
 
+        x = self.reduce_streams(x)
+
         if not return_attn:
             return x
 
         return x, torch.stack(post_softmax_attns)
 # mlp
 
-class MLP(nn.Module):
+class MLP(Module):
     def __init__(self, dims, act = None):
         super().__init__()
         dims_pairs = list(zip(dims[:-1], dims[1:]))
@@ -142,7 +152,7 @@ class MLP(nn.Module):
 
 # main class
 
-class TabTransformer(nn.Module):
+class TabTransformer(Module):
     def __init__(
         self,
         *,
@@ -160,7 +170,8 @@ class TabTransformer(nn.Module):
         attn_dropout = 0.,
         ff_dropout = 0.,
         use_shared_categ_embed = True,
-        shared_categ_dim_divisor = 8.   # in paper, they reserve dimension / 8 for category shared embedding
+        shared_categ_dim_divisor = 8.,   # in paper, they reserve dimension / 8 for category shared embedding
+        num_residual_streams = 4
     ):
         super().__init__()
         assert all(map(lambda n: n > 0, categories)), 'number of each category must be positive'
@@ -214,7 +225,8 @@ class TabTransformer(nn.Module):
             heads = heads,
             dim_head = dim_head,
             attn_dropout = attn_dropout,
-            ff_dropout = ff_dropout
+            ff_dropout = ff_dropout,
+            num_residual_streams = num_residual_streams
         )
 
         # mlp to logits
