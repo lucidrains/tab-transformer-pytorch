@@ -115,11 +115,10 @@ class Transformer(Module):
         x = self.expand_streams(x)
 
         for attn, ff in self.layers:
-            attn_out, post_softmax_attn = attn(x)
+            x, post_softmax_attn = attn(x)
             post_softmax_attns.append(post_softmax_attn)
 
-            x = x + attn_out
-            x = ff(x) + x
+            x = ff(x)
 
         x = self.reduce_streams(x)
 
