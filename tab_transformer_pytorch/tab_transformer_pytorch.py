@@ -17,14 +17,6 @@ def default(val, d):
 
 # classes
 
-class Residual(Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, x, **kwargs):
-        return self.fn(x, **kwargs) + x
-
 class PreNorm(Module):
     def __init__(self, dim, fn):
         super().__init__()
