@@ -44,23 +44,31 @@ class Attention(Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
+        
         h = self.heads
-
+    
         x = self.norm(x)
-
-        q, k, v = self.to_qkv(x).chunk(3, dim = -1)
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
+    
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), (q, k, v))
         q = q * self.scale
-
-        sim = einsum('b h i d, b h j d -> b h i j', q, k)
-
-        attn = sim.softmax(dim = -1)
+    
+        # Replace:
+        # sim = einsum("b h i d, b h j d -> b h i j", q, k)
+        # with matmul:
+        sim = torch.matmul(q, k.transpose(-1, -2))  # (b, h, i, j)
+    
+        attn = sim.softmax(dim=-1)
         dropped_attn = self.dropout(attn)
-
-        out = einsum('b h i j, b h j d -> b h i d', dropped_attn, v)
-        out = rearrange(out, 'b h n d -> b n (h d)', h = h)
+    
+        # Replace:
+        # out = einsum("b h i j, b h j d -> b h i d", dropped_attn, v)
+        # with matmul:
+        out = torch.matmul(dropped_attn, v)  # (b, h, i, d)
+    
+        out = rearrange(out, "b h n d -> b n (h d)", h=h)
         out = self.to_out(out)
-
+    
         return out, attn
 
 # transformer
