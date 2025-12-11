@@ -187,7 +187,7 @@ class FTTransformer(Module):
 
         x_categ = x_categ + self.num_special_tokens
 
-        discrete_embeds, continuous_embeds = self.embedding(
+        embeds = self.embedding(
             (x_categ, x_numer),
             sum_discrete_groups = False,
             sum_continuous = False
@@ -195,7 +195,10 @@ class FTTransformer(Module):
 
         # concat categorical and numerical
 
-        x = torch.cat((discrete_embeds, continuous_embeds), dim = 1)
+        if isinstance(embeds, tuple):
+            x = torch.cat(embeds, dim = 1)
+        else:
+            x = embeds # if continuous is 0
 
         # append cls tokens
 
