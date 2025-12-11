@@ -7,6 +7,8 @@ from einops import rearrange, repeat
 
 from hyper_connections import HyperConnections
 
+from discrete_continuous_embed_readout import Embed
+
 # feedforward and attention
 
 class GEGLU(Module):
@@ -150,23 +152,11 @@ class FTTransformer(Module):
         self.num_special_tokens = num_special_tokens
         total_tokens = self.num_unique_categories + num_special_tokens
 
-        # for automatically offsetting unique category ids to the correct position in the categories embedding table
+        # embed
 
-        if self.num_unique_categories > 0:
-            categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
-            categories_offset = categories_offset.cumsum(dim = -1)[:-1]
-            self.register_buffer('categories_offset', categories_offset)
+        categories_with_special = tuple(c + num_special_tokens for c in categories)
 
-            # categorical embedding
-
-            self.categorical_embeds = nn.Embedding(total_tokens, dim)
-
-        # continuous
-
-        self.num_continuous = num_continuous
-
-        if self.num_continuous > 0:
-            self.numerical_embedder = NumericalEmbedder(dim, self.num_continuous)
+        self.embedding = Embed(dim, num_discrete = categories_with_special, num_continuous = num_continuous, auto_append_discrete_group_dim = False)
 
         # cls token
 
@@ -195,25 +185,20 @@ class FTTransformer(Module):
     def forward(self, x_categ, x_numer, return_attn = False):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
 
-        xs = []
-        if self.num_unique_categories > 0:
-            x_categ = x_categ + self.categories_offset
+        x_categ = x_categ + self.num_special_tokens
 
-            x_categ = self.categorical_embeds(x_categ)
-
-            xs.append(x_categ)
-
-        # add numerically embedded tokens
-        if self.num_continuous > 0:
-            x_numer = self.numerical_embedder(x_numer)
-
-            xs.append(x_numer)
+        discrete_embeds, continuous_embeds = self.embedding(
+            (x_categ, x_numer),
+            sum_discrete_groups = False,
+            sum_continuous = False
+        )
 
         # concat categorical and numerical
 
-        x = torch.cat(xs, dim = 1)
+        x = torch.cat((discrete_embeds, continuous_embeds), dim = 1)
 
         # append cls tokens
+
         b = x.shape[0]
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b = b)
         x = torch.cat((cls_tokens, x), dim = 1)

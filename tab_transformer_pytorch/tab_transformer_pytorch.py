@@ -5,7 +5,11 @@ import torch.nn.functional as F
 
 from einops import rearrange, repeat
 
+from x_mlps_pytorch import MLP
+
 from hyper_connections import HyperConnections
+
+from discrete_continuous_embed_readout import Embed
 
 # helpers
 
@@ -118,28 +122,6 @@ class Transformer(Module):
             return x
 
         return x, torch.stack(post_softmax_attns)
-# mlp
-
-class MLP(Module):
-    def __init__(self, dims, act = None):
-        super().__init__()
-        dims_pairs = list(zip(dims[:-1], dims[1:]))
-        layers = []
-        for ind, (dim_in, dim_out) in enumerate(dims_pairs):
-            is_last = ind >= (len(dims_pairs) - 1)
-            linear = nn.Linear(dim_in, dim_out)
-            layers.append(linear)
-
-            if is_last:
-                continue
-
-            act = default(act, nn.ReLU())
-            layers.append(act)
-
-        self.mlp = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.mlp(x)
 
 # main class
 
@@ -176,26 +158,21 @@ class TabTransformer(Module):
         # create category embeddings table
 
         self.num_special_tokens = num_special_tokens
-        total_tokens = self.num_unique_categories + num_special_tokens
+        self.special_token_embed = nn.Embedding(num_special_tokens, dim)
 
-        shared_embed_dim = 0 if not use_shared_categ_embed else int(dim // shared_categ_dim_divisor)
+        # discrete embeds with groups
 
-        self.category_embed = nn.Embedding(total_tokens, dim - shared_embed_dim)
+        self.categorical_embeds = Embed(dim, num_discrete = categories)
 
         # take care of shared category embed
+
+        shared_embed_dim = 0 if not use_shared_categ_embed else int(dim // shared_categ_dim_divisor)
 
         self.use_shared_categ_embed = use_shared_categ_embed
 
         if use_shared_categ_embed:
             self.shared_category_embed = nn.Parameter(torch.zeros(self.num_categories, shared_embed_dim))
             nn.init.normal_(self.shared_category_embed, std = 0.02)
-
-        # for automatically offsetting unique category ids to the correct position in the categories embedding table
-
-        if self.num_unique_categories > 0:
-            categories_offset = F.pad(torch.tensor(list(categories)), (1, 0), value = num_special_tokens)
-            categories_offset = categories_offset.cumsum(dim = -1)[:-1]
-            self.register_buffer('categories_offset', categories_offset)
 
         # continuous
 
@@ -227,7 +204,7 @@ class TabTransformer(Module):
         hidden_dimensions = [input_size * t for t in  mlp_hidden_mults]
         all_dimensions = [input_size, *hidden_dimensions, dim_out]
 
-        self.mlp = MLP(all_dimensions, act = mlp_act)
+        self.mlp = MLP(*all_dimensions, activation = mlp_act)
 
     def forward(self, x_categ, x_cont, return_attn = False):
         xs = []
@@ -235,9 +212,14 @@ class TabTransformer(Module):
         assert x_categ.shape[-1] == self.num_categories, f'you must pass in {self.num_categories} values for your categories input'
 
         if self.num_unique_categories > 0:
-            x_categ = x_categ + self.categories_offset
+            is_special_token = x_categ < 0
 
-            categ_embed = self.category_embed(x_categ)
+            categ_embed = self.categorical_embeds(x_categ.clamp_min(0), sum_discrete_groups = False)
+
+            if is_special_token.any():
+                special_token_ids = (x_categ + 1).abs().clamp_max(self.num_special_tokens - 1) # use -1, -2, ... for specials
+                special_embed = self.special_token_embed(special_token_ids)
+                categ_embed = torch.where(is_special_token[..., None], special_embed, categ_embed)
 
             if self.use_shared_categ_embed:
                 shared_categ_embed = repeat(self.shared_category_embed, 'n d -> b n d', b = categ_embed.shape[0])
