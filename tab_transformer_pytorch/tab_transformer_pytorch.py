@@ -214,7 +214,7 @@ class TabTransformer(Module):
         if self.num_unique_categories > 0:
             is_special_token = x_categ < 0
 
-            categ_embed = self.categorical_embeds(x_categ.clamp_min(0), sum_discrete_groups = False)
+            categ_embed = self.categorical_embeds(x_categ.clamp_min(0), sum_discrete_sets = False)
 
             if is_special_token.any():
                 special_token_ids = (x_categ + 1).abs().clamp_max(self.num_special_tokens - 1) # use -1, -2, ... for specials

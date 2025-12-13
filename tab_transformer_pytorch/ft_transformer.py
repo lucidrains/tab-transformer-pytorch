@@ -156,7 +156,7 @@ class FTTransformer(Module):
 
         categories_with_special = tuple(c + num_special_tokens for c in categories)
 
-        self.embedding = Embed(dim, num_discrete = categories_with_special, num_continuous = num_continuous, auto_append_discrete_group_dim = False)
+        self.embedding = Embed(dim, num_discrete = categories_with_special, num_continuous = num_continuous, auto_append_discrete_set_dim = False)
 
         # cls token
 
@@ -187,18 +187,12 @@ class FTTransformer(Module):
 
         x_categ = x_categ + self.num_special_tokens
 
-        embeds = self.embedding(
+        x = self.embedding(
             (x_categ, x_numer),
-            sum_discrete_groups = False,
-            sum_continuous = False
+            sum_discrete_sets = False,
+            sum_continuous = False,
+            concat_discrete_continuous = True
         )
-
-        # concat categorical and numerical
-
-        if isinstance(embeds, tuple):
-            x = torch.cat(embeds, dim = 1)
-        else:
-            x = embeds # if continuous is 0
 
         # append cls tokens
 
