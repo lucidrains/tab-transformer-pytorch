@@ -155,15 +155,6 @@ class TabTransformer(Module):
         self.num_categories = len(categories)
         self.num_unique_categories = sum(categories)
 
-        # create category embeddings table
-
-        self.num_special_tokens = num_special_tokens
-        self.special_token_embed = nn.Embedding(num_special_tokens, dim)
-
-        # discrete embeds with groups
-
-        self.categorical_embeds = Embed(dim, num_discrete = categories)
-
         # take care of shared category embed
 
         shared_embed_dim = 0 if not use_shared_categ_embed else int(dim // shared_categ_dim_divisor)
@@ -173,6 +164,10 @@ class TabTransformer(Module):
         if use_shared_categ_embed:
             self.shared_category_embed = nn.Parameter(torch.zeros(self.num_categories, shared_embed_dim))
             nn.init.normal_(self.shared_category_embed, std = 0.02)
+
+        # discrete embeds with groups
+
+        self.categorical_embeds = Embed(dim - shared_embed_dim, num_discrete = categories)
 
         # continuous
 
@@ -184,6 +179,11 @@ class TabTransformer(Module):
             self.register_buffer('continuous_mean_std', continuous_mean_std)
 
             self.norm = nn.LayerNorm(num_continuous)
+
+        # create category embeddings table
+
+        self.num_special_tokens = num_special_tokens
+        self.special_token_embed = nn.Embedding(num_special_tokens, dim - shared_embed_dim)
 
         # transformer
 
