@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from einops import rearrange, repeat
 
-from hyper_connections import HyperConnections
+from hyper_connections import mHC
 
 from discrete_continuous_embed_readout import Embed
 
@@ -80,7 +80,7 @@ class Transformer(Module):
     ):
         super().__init__()
 
-        init_hyper_conn, self.expand_streams, self.reduce_streams = HyperConnections.get_init_and_expand_reduce_stream_functions(num_residual_streams, disable = num_residual_streams == 1)
+        init_hyper_conn, self.expand_streams, self.reduce_streams = mHC.get_init_and_expand_reduce_stream_functions(num_residual_streams, disable = num_residual_streams == 1)
 
         self.layers = ModuleList([])
 

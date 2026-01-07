@@ -7,7 +7,7 @@ from einops import rearrange, repeat
 
 from x_mlps_pytorch import MLP
 
-from hyper_connections import HyperConnections
+from hyper_connections import mHC
 
 from discrete_continuous_embed_readout import Embed
 
@@ -97,7 +97,7 @@ class Transformer(Module):
         super().__init__()
         self.layers = ModuleList([])
 
-        init_hyper_conn, self.expand_streams, self.reduce_streams = HyperConnections.get_init_and_expand_reduce_stream_functions(num_residual_streams, disable = num_residual_streams == 1)
+        init_hyper_conn, self.expand_streams, self.reduce_streams = mHC.get_init_and_expand_reduce_stream_functions(num_residual_streams, disable = num_residual_streams == 1)
 
         for _ in range(depth):
             self.layers.append(ModuleList([
